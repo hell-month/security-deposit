@@ -40,6 +40,8 @@ library Errors {
  */
 contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     address public supervisor;
+    // USDC on Ethereum complies fully with the ERC20 standard,
+    // so no need to use .safeTransferFrom() or .safeTransfer()
     IERC20 public usdc;
     uint256 public flatDepositAmount;
     uint256 public totalSlashed;
