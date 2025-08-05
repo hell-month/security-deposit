@@ -90,20 +90,6 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit Deposited(msg.sender, flatDepositAmount);
     }
 
-    function slashMany(address[] calldata students, uint256[] calldata amounts) external onlyOwner {
-        // If the course has ended, slashing is not allowed anymore
-        if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
-
-        if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
-        if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
-
-        for (uint256 i = 0; i < students.length; i++) {
-            slash(students[i], amounts[i]);
-        }
-
-        emit SlashedMany(students, amounts);
-    }
-
     function withdraw() external {
         // Unless the course has ended, students cannot take their deposits back
         if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
@@ -142,6 +128,20 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         }
 
         emit WithdrawnMany(students);
+    }
+
+    function slashMany(address[] calldata students, uint256[] calldata amounts) external onlyOwner {
+        // If the course has ended, slashing is not allowed anymore
+        if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
+
+        if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
+        if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
+
+        for (uint256 i = 0; i < students.length; i++) {
+            slash(students[i], amounts[i]);
+        }
+
+        emit SlashedMany(students, amounts);
     }
 
     function transferSlashedToSupervisor() external onlySupervisor {

@@ -93,4 +93,85 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         emit Deposited(student, flatDepositAmount);
         pool.deposit();
     }
+
+    function testWithdrawSucceeds() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+
+        uint256 studentBalanceBefore = mockUsdc.balanceOf(student);
+        vm.prank(student);
+        pool.withdraw();
+        // Student should get their deposit back
+        assertEq(mockUsdc.balanceOf(student), studentBalanceBefore + flatDepositAmount);
+        // Deposit should be reset
+        assertEq(pool.deposits(student), 0);
+        // hasDeposited stays true forever becauase
+        // the contract is a one-time deposit contract
+        assertTrue(pool.hasDeposited(student));
+    }
+
+    function testWithdrawFailsIfNoDeposit() public {
+        address student = address(0x789);
+        vm.prank(student);
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+
+        vm.expectRevert(bytes4(keccak256("HasNotDeposited()")));
+        pool.withdraw();
+    }
+
+    function testWithdrawEmitsWithdrawnEvent() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+
+        vm.prank(student);
+        vm.expectEmit(true, false, false, true);
+        emit Withdrawn(student, flatDepositAmount);
+        pool.withdraw();
+    }
+
+    function testWithdrawAfterSlashing() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Owner slashes half the deposit using slashMany
+        uint256 slashAmount = flatDepositAmount / 2;
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = slashAmount;
+        vm.prank(instructor); // Owner
+        pool.slashMany(students, amounts);
+
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+
+        uint256 studentBalanceBefore = mockUsdc.balanceOf(student);
+        vm.prank(student);
+        pool.withdraw();
+        // Student should get only the remaining deposit
+        assertEq(mockUsdc.balanceOf(student), studentBalanceBefore + (flatDepositAmount - slashAmount));
+        // Deposit should be reset
+        assertEq(pool.deposits(student), 0);
+        // hasDeposited stays true forever
+        assertTrue(pool.hasDeposited(student));
+    }
 }
