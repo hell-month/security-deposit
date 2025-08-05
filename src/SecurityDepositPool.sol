@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./ISecurityDepositPool.sol";
 
 library Errors {
     // Constructor errors
@@ -16,7 +17,6 @@ library Errors {
     error CourseEnded();
 
     // Slash errors
-    error NotOwner();
     error InsufficientDeposit();
     error ArrayLengthMismatch();
 
@@ -38,7 +38,7 @@ library Errors {
  * discretion of the owner (instructor), and facilitates the return of
  * deposits after the course ends.
  */
-contract SecurityDepositPool is Ownable {
+contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     address public supervisor;
     IERC20 public usdc;
     uint256 public flatDepositAmount;
@@ -84,6 +84,8 @@ contract SecurityDepositPool is Ownable {
 
         deposits[msg.sender] = flatDepositAmount;
         hasDeposited[msg.sender] = true;
+
+        emit Deposited(msg.sender, flatDepositAmount);
     }
 
     function slashMany(address[] calldata students, uint256[] calldata amounts) external onlyOwner {
@@ -96,9 +98,11 @@ contract SecurityDepositPool is Ownable {
         for (uint256 i = 0; i < students.length; i++) {
             slash(students[i], amounts[i]);
         }
+
+        emit SlashedMany(students, amounts);
     }
 
-    function take() external {
+    function withdraw() external {
         // Unless the course has ended, students cannot take their deposits back
         if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
         // Ensure the student has deposited
@@ -111,9 +115,11 @@ contract SecurityDepositPool is Ownable {
         deposits[msg.sender] = 0;
         bool success = usdc.transfer(msg.sender, remainingAmount);
         if (!success) revert Errors.USDCTransferFailed();
+
+        emit Withdrawn(msg.sender, remainingAmount);
     }
 
-    function transferDepositBackToAll(
+    function withdrawMany(
         // List of students will be externally indexed
         // to save gas
         address[] calldata students
@@ -132,6 +138,8 @@ contract SecurityDepositPool is Ownable {
             bool success = usdc.transfer(student, amount);
             if (!success) revert Errors.USDCTransferFailed();
         }
+
+        emit WithdrawnMany(students);
     }
 
     function transferSlashedToSupervisor() external onlySupervisor {
@@ -148,6 +156,8 @@ contract SecurityDepositPool is Ownable {
         if (!success) revert Errors.USDCTransferFailed();
 
         isTotalSlashedTransferred = true;
+
+        emit SlashedTransferred(supervisor, amount);
     }
 
     // Any functions that call slash should ensure the course has not ended
