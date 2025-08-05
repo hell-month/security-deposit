@@ -140,7 +140,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
 
         vm.prank(student);
         vm.expectEmit(true, false, false, true);
-        emit Withdrawn(student, flatDepositAmount);
+        emit Withdrawn(student);
         pool.withdraw();
     }
 

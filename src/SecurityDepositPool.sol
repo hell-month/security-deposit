@@ -98,6 +98,8 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
 
     function withdraw() external courseEnded {
         _withdraw(msg.sender);
+
+        emit Withdrawn(msg.sender);
     }
 
     function withdrawMany(
@@ -144,7 +146,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit SlashedTransferred(supervisor, amount);
     }
 
-    function _withdraw(address student) internal {
+    function _withdraw(address student) internal returns (uint256) {
         // Ensure the student has deposited
         if (!hasDeposited[student]) revert Errors.HasNotDeposited();
 
@@ -156,7 +158,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         bool success = usdc.transfer(student, remainingAmount);
         if (!success) revert Errors.USDCTransferFailed();
 
-        emit Withdrawn(student, remainingAmount);
+        return remainingAmount;
     }
 
     // Any functions that call slash should ensure the course has not ended
