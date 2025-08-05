@@ -13,14 +13,17 @@ library Errors {
     // Deposit errors
     error AlreadyDeposited();
     error USDCTransferFailed();
+    error CourseEnded();
 
     // Slash errors
     error NotOwner();
     error InsufficientDeposit();
+    error ArrayLengthMismatch();
 
     // Take errors
     error NoRemainingDeposit();
     error HasNotDeposited();
+    error CourseNotEnded();
 
     // Supervisor errors
     error NotSupervisor();
@@ -28,12 +31,22 @@ library Errors {
     error SlashedAmountAlreadyTransferred();
 }
 
+/**
+ * @title SecurityDepositPool
+ * @notice This contract manages the security deposits for a course.
+ * It allows students to deposit USDC, slashes deposits based on the
+ * discretion of the owner (instructor), and facilitates the return of
+ * deposits after the course ends.
+ */
 contract SecurityDepositPool is Ownable {
     address public supervisor;
     IERC20 public usdc;
     uint256 public flatDepositAmount;
     uint256 public totalSlashed;
     bool public isTotalSlashedTransferred;
+    // Timestamp at which the course is supposed to end.
+    // Also the time after which deposits can be claimed back
+    uint256 public courseEndTime;
 
     mapping(address => uint256) public deposits;
     mapping(address => bool) public hasDeposited;
@@ -43,7 +56,13 @@ contract SecurityDepositPool is Ownable {
         _;
     }
 
-    constructor(address _owner, address _supervisor, address _usdc, uint256 _flatDepositAmount) Ownable(_owner) {
+    constructor(
+        address _instructor,
+        address _supervisor,
+        address _usdc,
+        uint256 _flatDepositAmount,
+        uint256 _courseEndTime
+    ) Ownable(_instructor) {
         if (_supervisor == address(0)) revert Errors.ZeroSupervisorAddress();
         if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
         if (_flatDepositAmount == 0) revert Errors.ZeroDepositAmount();
@@ -51,10 +70,14 @@ contract SecurityDepositPool is Ownable {
         supervisor = _supervisor;
         usdc = IERC20(_usdc);
         flatDepositAmount = _flatDepositAmount;
+        courseEndTime = _courseEndTime;
     }
 
     function deposit() external {
+        // Ensure the student has not already deposited
         if (hasDeposited[msg.sender]) revert Errors.AlreadyDeposited();
+        // Ensure the course has not ended (a student can join during the course too)
+        if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
 
         bool success = usdc.transferFrom(msg.sender, address(this), flatDepositAmount);
         if (!success) revert Errors.USDCTransferFailed();
@@ -64,7 +87,11 @@ contract SecurityDepositPool is Ownable {
     }
 
     function slashMany(address[] calldata students, uint256[] calldata amounts) external onlyOwner {
-        if (students.length != amounts.length) revert Errors.NotOwner();
+        // If the course has ended, slashing is not allowed anymore
+        if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
+
+        if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
+        if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
 
         for (uint256 i = 0; i < students.length; i++) {
             slash(students[i], amounts[i]);
@@ -72,9 +99,13 @@ contract SecurityDepositPool is Ownable {
     }
 
     function take() external {
+        // Unless the course has ended, students cannot take their deposits back
+        if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
+        // Ensure the student has deposited
         if (!hasDeposited[msg.sender]) revert Errors.HasNotDeposited();
 
         uint256 remainingAmount = deposits[msg.sender];
+        // If the student has no remaining deposit due to slashing, revert
         if (remainingAmount == 0) revert Errors.NoRemainingDeposit();
 
         deposits[msg.sender] = 0;
@@ -84,8 +115,12 @@ contract SecurityDepositPool is Ownable {
 
     function transferDepositBackToAll(
         // List of students will be externally indexed
+        // to save gas
         address[] calldata students
     ) external onlyOwner {
+        // Unless the course has ended, students cannot take their deposits back
+        if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
+
         for (uint256 i = 0; i < students.length; i++) {
             address student = students[i];
             if (!hasDeposited[student]) revert Errors.HasNotDeposited();
@@ -100,7 +135,11 @@ contract SecurityDepositPool is Ownable {
     }
 
     function transferSlashedToSupervisor() external onlySupervisor {
+        // Ensure the course has ended before transferring slashed amounts
+        if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
+        // Ensure there is a slashed amount to transfer
         if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
+        // Ensure the slashed amount has not been transferred already
         if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
 
         uint256 amount = totalSlashed;
@@ -111,8 +150,11 @@ contract SecurityDepositPool is Ownable {
         isTotalSlashedTransferred = true;
     }
 
+    // Any functions that call slash should ensure the course has not ended
     function slash(address student, uint256 amount) internal {
+        // Ensure the student has deposited
         if (!hasDeposited[student]) revert Errors.HasNotDeposited();
+        // Ensure the amount to slash is valid
         if (deposits[student] < amount) revert Errors.InsufficientDeposit();
 
         deposits[student] -= amount;
