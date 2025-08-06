@@ -12,3 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: crytic/slither-action@v0.4.1
+        with:
+          # ignore informational
+          fail-on: low
