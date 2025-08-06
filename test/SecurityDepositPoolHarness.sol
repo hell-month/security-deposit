@@ -6,11 +6,11 @@ import {SecurityDepositPool} from "../src/SecurityDepositPool.sol";
 contract SecurityDepositPoolHarness is SecurityDepositPool {
     constructor(
         address instructor,
-        address supervisor,
+        address fundsManager,
         address usdcAddress,
         uint256 flatDepositAmount,
         uint256 courseEndTime
-    ) SecurityDepositPool(instructor, supervisor, usdcAddress, flatDepositAmount, courseEndTime) {}
+    ) SecurityDepositPool(instructor, fundsManager, usdcAddress, flatDepositAmount, courseEndTime) {}
 
     function withdrawHarness(address student) public {
         _withdraw(student);
