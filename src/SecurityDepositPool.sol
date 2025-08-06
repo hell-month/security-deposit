@@ -10,6 +10,8 @@ library Errors {
     error ZeroFundsManagerAddress();
     error ZeroUSDCAddress();
     error ZeroDepositAmount();
+    error CourseFinalizedTimeInPast();
+    error CourseFinalizedTimeInDistantFuture();
 
     // Deposit errors
     error AlreadyDeposited();
@@ -82,6 +84,8 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
         if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
         if (_flatDepositAmount == 0) revert Errors.ZeroDepositAmount();
+        if (_courseFinalizedTime < block.timestamp) revert Errors.CourseFinalizedTimeInPast();
+        if (_courseFinalizedTime > block.timestamp + 60 days) revert Errors.CourseFinalizedTimeInDistantFuture();
 
         fundsManager = _fundsManager;
         usdc = IERC20(_usdc);
@@ -154,12 +158,12 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // Transferring the slashed amount can only be done after the course has been finalized
         afterCourseFinalized
     {
-        // Ensure there is a slashed amount to transfer
-        if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
         // Ensure the slashed amount has not been transferred already.
         // Transferring the slashed amount is a one-time operation in the
         // lifetime of the contract, so if it is already done, can't transfer again
         if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
+        // Ensure there is a slashed amount to transfer
+        if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
 
         uint256 amount = totalSlashed;
         totalSlashed = 0;

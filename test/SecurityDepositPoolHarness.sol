@@ -19,4 +19,7 @@ contract SecurityDepositPoolHarness is SecurityDepositPool {
     function slash(address student, uint256 amount) public {
         _slash(student, amount);
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testA() public {}
 }

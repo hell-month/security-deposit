@@ -22,4 +22,7 @@ contract MockERC20 is ERC20 {
     function decimals() public view override returns (uint8) {
         return _decimals;
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testA() public {}
 }

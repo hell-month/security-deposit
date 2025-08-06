@@ -16,4 +16,7 @@ contract SecurityDepositPoolScript is Script {
 
         vm.stopBroadcast();
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testA() public {}
 }
