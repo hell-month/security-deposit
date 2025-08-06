@@ -6,28 +6,23 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ISecurityDepositPool.sol";
 
 library Errors {
-    // Constructor errors
     error ZeroFundsManagerAddress();
     error ZeroUSDCAddress();
     error ZeroFlatDepositAmount();
     error CourseFinalizedTimeInPast();
     error CourseFinalizedTimeInDistantFuture();
 
-    // Deposit errors
     error AlreadyDeposited();
     error USDCTransferFailed();
     error CourseFinalized();
 
-    // Slash errors
     error InsufficientDeposit();
     error ArrayLengthMismatch();
 
-    // Take errors
     error NoRemainingDeposit();
     error HasNotDeposited();
     error CourseNotFinalized();
 
-    // FundsManager errors
     error NotFundsManagerOrOwner();
     error NoSlashedAmountToTransfer();
     error SlashedAmountAlreadyTransferred();
@@ -74,6 +69,10 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         _;
     }
 
+    /**
+     * @dev Initializes the contract with instructor, funds manager, USDC token, deposit amount, and course end time.
+     * Performs validation on input parameters.
+     */
     constructor(
         address _instructor,
         address _fundsManager,
@@ -93,6 +92,9 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         courseFinalizedTime = _courseFinalizedTime;
     }
 
+    /**
+     * @dev Allows a student to deposit a flat USDC collateral before the course ends. Reverts if already deposited.
+     */
     function deposit()
         external
         // Ensure the course has not ended (a student can join during the course too)
@@ -110,12 +112,18 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit Deposited(msg.sender, flatDepositAmount);
     }
 
+    /**
+     * @dev Allows a student to withdraw their remaining deposit after the course is finalized.
+     */
     function withdraw() external afterCourseFinalized {
         _withdraw(msg.sender);
 
         emit Withdrawn(msg.sender);
     }
 
+    /**
+     * @dev Allows the owner to withdraw deposits for multiple students after the course is finalized.
+     */
     function withdrawMany(
         // List of students will be externally indexed
         // to save gas
@@ -128,6 +136,10 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit WithdrawnMany(students);
     }
 
+    /**
+     * @dev Allows the owner to slash deposits of multiple students before the course ends.
+     * Slashed funds are tracked for later transfer.
+     */
     function slashMany(address[] calldata students, uint256[] calldata amounts)
         external
         onlyOwner
@@ -152,6 +164,10 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit SlashedMany(students, amounts);
     }
 
+    /**
+     * @dev Transfers the total slashed amount to the funds manager after the course is finalized.
+     * Can only be called once.
+     */
     function transferSlashedToFundsManager()
         external
         onlyFundsManagerOrOwner
@@ -175,7 +191,12 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit SlashedTransferred(fundsManager, amount);
     }
 
-    // Any functions that call withdraw should ensure the course has ended
+    /**
+     * @dev Internal function to withdraw a student's remaining deposit.
+     * Reverts if no deposit or deposit is zero.
+     * 
+     * Any functions that call _withdraw should ensure the course has ended
+     */
     function _withdraw(address student) internal {
         // Ensure the student has deposited
         if (!hasDeposited[student]) revert Errors.HasNotDeposited();
@@ -189,7 +210,12 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (!success) revert Errors.USDCTransferFailed();
     }
 
-    // Any functions that call slash should ensure the course has not ended
+    /**
+     * @dev Internal function to slash a student's deposit by a given amount.
+     * Reverts if insufficient deposit.
+     * 
+     * Any functions that call _slash should ensure the course has not ended.
+     */
     function _slash(address student, uint256 amount) internal {
         // Ensure the student has deposited
         if (!hasDeposited[student]) revert Errors.HasNotDeposited();

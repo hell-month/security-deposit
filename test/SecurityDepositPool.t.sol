@@ -10,15 +10,16 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
     SecurityDepositPoolHarness public pool;
     MockERC20 public mockUsdc;
     address public instructor = address(0x123);
-    address public supervisor = address(0x456);
+    address public fundsManager = address(0x456);
     uint8 public usdcDecimals = 6;
     uint256 public flatDepositAmount = 70 * 10 ** usdcDecimals; // Assuming USDC has 6 decimals
     uint256 courseEndTime = block.timestamp + 30 days; // Course ends in 30 days
 
     function setUp() public {
         mockUsdc = new MockERC20("Mock USDC", "USDC", usdcDecimals);
-        pool =
-            new SecurityDepositPoolHarness(instructor, supervisor, address(mockUsdc), flatDepositAmount, courseEndTime);
+        pool = new SecurityDepositPoolHarness(
+            instructor, fundsManager, address(mockUsdc), flatDepositAmount, courseEndTime
+        );
     }
 
     /**
@@ -278,7 +279,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Student should get only the remaining deposit
         assertEq(mockUsdc.balanceOf(student), flatDepositAmount - slashAmount);
         // Check contract balance. Slashed amount should remain in the pool until
-        // transferred to the supervisor
+        // transferred to the fundsManager
         assertEq(mockUsdc.balanceOf(address(pool)), slashAmount);
         // Deposit should be reset
         assertEq(pool.deposits(student), 0);
@@ -673,11 +674,11 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.warp(block.timestamp + 31 days);
         // Transfer slashed funds
         uint256 slashedAmount = flatDepositAmount / 2;
-        uint256 fundsManagerBalanceBefore = mockUsdc.balanceOf(supervisor);
-        vm.prank(supervisor);
+        uint256 fundsManagerBalanceBefore = mockUsdc.balanceOf(fundsManager);
+        vm.prank(fundsManager);
         pool.transferSlashedToFundsManager();
         // Funds manager should receive slashed amount
-        assertEq(mockUsdc.balanceOf(supervisor), fundsManagerBalanceBefore + slashedAmount);
+        assertEq(mockUsdc.balanceOf(fundsManager), fundsManagerBalanceBefore + slashedAmount);
         // totalSlashed should be zero
         assertEq(pool.totalSlashed(), 0);
         // isTotalSlashedTransferred should be true
@@ -718,7 +719,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.prank(instructor);
         pool.slashMany(students, amounts);
         // Do NOT warp time
-        vm.prank(supervisor);
+        vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("CourseNotFinalized()")));
         pool.transferSlashedToFundsManager();
     }
@@ -726,7 +727,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
     function testTransferSlashedToFundsManagerFailsIfNoSlashedAmount() public {
         // Warp time past course end
         vm.warp(block.timestamp + 31 days);
-        vm.prank(supervisor);
+        vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("NoSlashedAmountToTransfer()")));
         pool.transferSlashedToFundsManager();
     }
@@ -745,10 +746,10 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.prank(instructor);
         pool.slashMany(students, amounts);
         vm.warp(block.timestamp + 31 days);
-        vm.prank(supervisor);
+        vm.prank(fundsManager);
         pool.transferSlashedToFundsManager();
         // Try again
-        vm.prank(supervisor);
+        vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
         pool.transferSlashedToFundsManager();
     }
