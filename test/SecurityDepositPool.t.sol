@@ -2,12 +2,12 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {SecurityDepositPool} from "../src/SecurityDepositPool.sol";
+import {SecurityDepositPoolHarness} from "./SecurityDepositPoolHarness.sol";
 import {ISecurityDepositPool} from "../src/ISecurityDepositPool.sol";
 import {MockERC20} from "./MockERC20.sol";
 
 contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
-    SecurityDepositPool public pool;
+    SecurityDepositPoolHarness public pool;
     MockERC20 public mockUsdc;
     address public instructor = address(0x123);
     address public supervisor = address(0x456);
@@ -17,7 +17,8 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
 
     function setUp() public {
         mockUsdc = new MockERC20("Mock USDC", "USDC", usdcDecimals);
-        pool = new SecurityDepositPool(instructor, supervisor, address(mockUsdc), flatDepositAmount, courseEndTime);
+        pool =
+            new SecurityDepositPoolHarness(instructor, supervisor, address(mockUsdc), flatDepositAmount, courseEndTime);
     }
 
     /**
@@ -431,5 +432,154 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // hasDeposited stays true forever
         assertTrue(pool.hasDeposited(student1));
         assertTrue(pool.hasDeposited(student2));
+    }
+
+    /**
+     *
+     * Slash Many
+     *
+     */
+    struct SlashManySetup {
+        address student1;
+        address student2;
+    }
+
+    function slashManySetup() internal returns (SlashManySetup memory setup) {
+        address student1 = address(0x789);
+        address student2 = address(0xABC);
+        mockUsdc.mint(student1, flatDepositAmount);
+        mockUsdc.mint(student2, flatDepositAmount);
+        vm.prank(student1);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student2);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student1);
+        pool.deposit();
+        vm.prank(student2);
+        pool.deposit();
+        assertEq(pool.deposits(student1), flatDepositAmount);
+        assertEq(pool.deposits(student2), flatDepositAmount);
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount * 2);
+
+        setup.student1 = student1;
+        setup.student2 = student2;
+        return setup;
+    }
+
+    function testSlashManySucceeds() public {
+        SlashManySetup memory setup = slashManySetup();
+        address student1 = setup.student1;
+        address student2 = setup.student2;
+
+        // Owner slashes different amounts for each student
+        uint256 slashAmount1 = flatDepositAmount / 2;
+        uint256 slashAmount2 = flatDepositAmount / 3;
+        address[] memory students = new address[](2);
+        students[0] = student1;
+        students[1] = student2;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = slashAmount1;
+        amounts[1] = slashAmount2;
+        vm.prank(instructor);
+        pool.slashMany(students, amounts);
+
+        // Check deposits after slashing
+        assertEq(pool.deposits(student1), flatDepositAmount - slashAmount1);
+        assertEq(pool.deposits(student2), flatDepositAmount - slashAmount2);
+        // Check totalSlashed
+        assertEq(pool.totalSlashed(), slashAmount1 + slashAmount2);
+        // Pool balance remains unchanged until withdrawal
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount * 2);
+    }
+
+    function testSlashManyEmitsSlashedManyEvent() public {
+        address student1 = address(0x789);
+        address student2 = address(0xABC);
+        mockUsdc.mint(student1, flatDepositAmount);
+        mockUsdc.mint(student2, flatDepositAmount);
+        vm.prank(student1);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student2);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student1);
+        pool.deposit();
+        vm.prank(student2);
+        pool.deposit();
+
+        uint256 slashAmount1 = flatDepositAmount / 2;
+        uint256 slashAmount2 = flatDepositAmount / 3;
+        address[] memory students = new address[](2);
+        students[0] = student1;
+        students[1] = student2;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = slashAmount1;
+        amounts[1] = slashAmount2;
+
+        vm.prank(instructor);
+        vm.expectEmit(true, true, false, false);
+        emit SlashedMany(students, amounts);
+        pool.slashMany(students, amounts);
+    }
+
+    function testSlashManyFailsIfArrayLengthMismatch() public {
+        SlashManySetup memory setup = slashManySetup();
+        address student1 = setup.student1;
+        address student2 = setup.student2;
+
+        // Owner tries to slash with mismatched arrays
+        address[] memory students = new address[](2);
+        students[0] = student1;
+        students[1] = student2;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = flatDepositAmount / 2;
+        vm.prank(instructor);
+        vm.expectRevert(bytes4(keccak256("ArrayLengthMismatch()")));
+        pool.slashMany(students, amounts);
+    }
+
+    function testSlashManyFailsAfterCourseFinalized() public {
+        SlashManySetup memory setup = slashManySetup();
+        address student1 = setup.student1;
+        address student2 = setup.student2;
+
+        // Owner slashes both students
+        uint256 slashAmount1 = flatDepositAmount / 2;
+        uint256 slashAmount2 = flatDepositAmount / 3;
+        address[] memory students = new address[](2);
+        students[0] = student1;
+        students[1] = student2;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = slashAmount1;
+        amounts[1] = slashAmount2;
+        vm.prank(instructor);
+        pool.slashMany(students, amounts);
+
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+
+        // Try to call slashMany again, should revert
+        vm.prank(instructor);
+        vm.expectRevert(bytes4(keccak256("CourseFinalized()")));
+        pool.slashMany(students, amounts);
+    }
+
+    function testSlashManyFailsIfNotOwner() public {
+        SlashManySetup memory setup = slashManySetup();
+        address student1 = setup.student1;
+        address student2 = setup.student2;
+
+        uint256 slashAmount1 = flatDepositAmount / 2;
+        uint256 slashAmount2 = flatDepositAmount / 3;
+        address[] memory students = new address[](2);
+        students[0] = student1;
+        students[1] = student2;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = slashAmount1;
+        amounts[1] = slashAmount2;
+
+        // Try to call slashMany as a non-owner (student1)
+        vm.prank(student1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", student1));
+        pool.slashMany(students, amounts);
     }
 }
