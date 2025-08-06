@@ -198,10 +198,10 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // Ensure there is a slashed amount to transfer
         if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
 
-        totalSlashed = 0;
         isTotalSlashedTransferred = true;
-
         uint256 amount = totalSlashed;
+        totalSlashed = 0;
+
         emit SlashedTransferred(fundsManager, amount);
 
         bool success = usdc.transfer(fundsManager, amount);
