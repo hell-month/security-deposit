@@ -30,6 +30,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Deposit
         vm.prank(student);
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
 
         // Check deposit recorded
         assertEq(pool.deposits(student), flatDepositAmount);
@@ -47,11 +48,13 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // First deposit
         vm.prank(student);
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
 
         // Second deposit should revert
         vm.prank(student);
         vm.expectRevert(bytes4(keccak256("AlreadyDeposited()")));
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 
     function testDepositFailsIfCourseEnded() public {
@@ -66,6 +69,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.prank(student);
         vm.expectRevert(bytes4(keccak256("CourseEnded()")));
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), 0);
     }
 
     function testDepositFailsIfNoApproval() public {
@@ -80,6 +84,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         );
 
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), 0);
     }
 
     function testDepositEmitsDepositedEvent() public {
@@ -92,6 +97,22 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.expectEmit(true, false, false, true);
         emit Deposited(student, flatDepositAmount);
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
+    }
+
+    function testWithdrawFailsIfCourseNotEnded() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Do NOT warp time; course is still ongoing
+        vm.prank(student);
+        vm.expectRevert(bytes4(keccak256("CourseNotEnded()")));
+        pool.withdraw();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 
     function testWithdrawSucceeds() public {
@@ -101,15 +122,20 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         mockUsdc.approve(address(pool), flatDepositAmount);
         vm.prank(student);
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
 
         // Warp time past course end
         vm.warp(block.timestamp + 31 days);
 
         uint256 studentBalanceBefore = mockUsdc.balanceOf(student);
+        assertEq(studentBalanceBefore, 0);
+
         vm.prank(student);
         pool.withdraw();
         // Student should get their deposit back
-        assertEq(mockUsdc.balanceOf(student), studentBalanceBefore + flatDepositAmount);
+        assertEq(mockUsdc.balanceOf(student), flatDepositAmount);
+        // Check contract balance
+        assertEq(mockUsdc.balanceOf(address(pool)), 0);
         // Deposit should be reset
         assertEq(pool.deposits(student), 0);
         // hasDeposited stays true forever becauase
@@ -134,6 +160,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         mockUsdc.approve(address(pool), flatDepositAmount);
         vm.prank(student);
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
 
         // Warp time past course end
         vm.warp(block.timestamp + 31 days);
@@ -142,6 +169,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.expectEmit(true, false, false, true);
         emit Withdrawn(student);
         pool.withdraw();
+        assertEq(mockUsdc.balanceOf(address(pool)), 0);
     }
 
     function testWithdrawAfterSlashing() public {
@@ -151,6 +179,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         mockUsdc.approve(address(pool), flatDepositAmount);
         vm.prank(student);
         pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
 
         // Owner slashes half the deposit using slashMany
         uint256 slashAmount = flatDepositAmount / 2;
@@ -165,13 +194,46 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.warp(block.timestamp + 31 days);
 
         uint256 studentBalanceBefore = mockUsdc.balanceOf(student);
+        assertEq(studentBalanceBefore, 0);
         vm.prank(student);
         pool.withdraw();
         // Student should get only the remaining deposit
-        assertEq(mockUsdc.balanceOf(student), studentBalanceBefore + (flatDepositAmount - slashAmount));
+        assertEq(mockUsdc.balanceOf(student), flatDepositAmount - slashAmount);
+        // Check contract balance. Slashed amount should remain in the pool until
+        // transferred to the supervisor
+        assertEq(mockUsdc.balanceOf(address(pool)), slashAmount);
         // Deposit should be reset
         assertEq(pool.deposits(student), 0);
         // hasDeposited stays true forever
         assertTrue(pool.hasDeposited(student));
+    }
+
+    function testWithdrawFailsIfSlashedToZero() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
+
+        // Owner slashes 100% of the deposit using slashMany
+        uint256 slashAmount = flatDepositAmount;
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = slashAmount;
+        vm.prank(instructor); // Owner
+        pool.slashMany(students, amounts);
+
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+
+        vm.prank(student);
+        vm.expectRevert(bytes4(keccak256("NoRemainingDeposit()")));
+        pool.withdraw();
+
+        // Withdraw fails. Slashed amount remains in the pool
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 }

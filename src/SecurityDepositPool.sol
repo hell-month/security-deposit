@@ -146,7 +146,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit SlashedTransferred(supervisor, amount);
     }
 
-    function _withdraw(address student) internal returns (uint256) {
+    function _withdraw(address student) internal {
         // Ensure the student has deposited
         if (!hasDeposited[student]) revert Errors.HasNotDeposited();
 
@@ -157,8 +157,6 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         deposits[student] = 0;
         bool success = usdc.transfer(student, remainingAmount);
         if (!success) revert Errors.USDCTransferFailed();
-
-        return remainingAmount;
     }
 
     // Any functions that call slash should ensure the course has not ended
