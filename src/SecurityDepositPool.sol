@@ -7,7 +7,7 @@ import "./ISecurityDepositPool.sol";
 
 library Errors {
     // Constructor errors
-    error ZeroSupervisorAddress();
+    error ZeroFundsManagerAddress();
     error ZeroUSDCAddress();
     error ZeroDepositAmount();
 
@@ -25,8 +25,8 @@ library Errors {
     error HasNotDeposited();
     error CourseNotEnded();
 
-    // Supervisor errors
-    error NotSupervisor();
+    // FundsManager errors
+    error NotFundsManager();
     error NoSlashedAmountToTransfer();
     error SlashedAmountAlreadyTransferred();
 }
@@ -39,7 +39,7 @@ library Errors {
  * deposits after the course ends.
  */
 contract SecurityDepositPool is Ownable, ISecurityDepositPool {
-    address public supervisor;
+    address public fundsManager;
     // USDC on Ethereum complies fully with the ERC20 standard,
     // so no need to use .safeTransferFrom() or .safeTransfer()
     IERC20 public usdc;
@@ -53,8 +53,8 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     mapping(address => uint256) public deposits;
     mapping(address => bool) public hasDeposited;
 
-    modifier onlySupervisor() {
-        if (msg.sender != supervisor) revert Errors.NotSupervisor();
+    modifier onlyFundsManager() {
+        if (msg.sender != fundsManager) revert Errors.NotFundsManager();
         _;
     }
 
@@ -66,16 +66,16 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
 
     constructor(
         address _instructor,
-        address _supervisor,
+        address _fundsManager,
         address _usdc,
         uint256 _flatDepositAmount,
         uint256 _courseEndTime
     ) Ownable(_instructor) {
-        if (_supervisor == address(0)) revert Errors.ZeroSupervisorAddress();
+        if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
         if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
         if (_flatDepositAmount == 0) revert Errors.ZeroDepositAmount();
 
-        supervisor = _supervisor;
+        fundsManager = _fundsManager;
         usdc = IERC20(_usdc);
         flatDepositAmount = _flatDepositAmount;
         courseEndTime = _courseEndTime;
@@ -117,7 +117,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     function slashMany(address[] calldata students, uint256[] calldata amounts) external onlyOwner {
         // If the course has ended, slashing is not allowed anymore
         if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
-
+        // After the
         if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
         if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
 
@@ -128,7 +128,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit SlashedMany(students, amounts);
     }
 
-    function transferSlashedToSupervisor() external onlySupervisor {
+    function transferSlashedToFundsManager() external onlyFundsManager {
         // Ensure the course has ended before transferring slashed amounts
         if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
         // Ensure there is a slashed amount to transfer
@@ -138,12 +138,12 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
 
         uint256 amount = totalSlashed;
         totalSlashed = 0;
-        bool success = usdc.transfer(supervisor, amount);
+        bool success = usdc.transfer(fundsManager, amount);
         if (!success) revert Errors.USDCTransferFailed();
 
         isTotalSlashedTransferred = true;
 
-        emit SlashedTransferred(supervisor, amount);
+        emit SlashedTransferred(fundsManager, amount);
     }
 
     function _withdraw(address student) internal {
