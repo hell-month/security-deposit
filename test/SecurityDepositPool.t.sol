@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {SecurityDepositPoolHarness} from "./SecurityDepositPoolHarness.sol";
 import {ISecurityDepositPool} from "../src/ISecurityDepositPool.sol";
 import {MockERC20} from "./MockERC20.sol";
+import {MockMalformedERC20} from "./MockMalformedERC20.sol";
 
 contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
     SecurityDepositPoolHarness public pool;
@@ -174,6 +175,25 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 
+    function testDepositFailsIfTransferFromReturnsFalse() public {
+        // Setup pool with MockMalformedERC20
+        MockMalformedERC20 malformedUsdc = new MockMalformedERC20("Malformed USDC", "USDC", usdcDecimals);
+        SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
+            instructor, fundsManager, address(malformedUsdc), flatDepositAmount, courseEndTime
+        );
+        address student = address(0x789);
+        malformedUsdc.mint(student, flatDepositAmount);
+        // Approve pool
+        vm.prank(student);
+        malformedUsdc.approve(address(pool_), flatDepositAmount);
+        // Set transferFrom to fail
+        malformedUsdc.setFailTransferFrom(true);
+        // Try deposit, should revert with USDCTransferFailed
+        vm.prank(student);
+        vm.expectRevert(bytes4(keccak256("USDCTransferFailed()")));
+        pool_.deposit();
+    }
+
     /**
      *
      * Withdraw
@@ -314,6 +334,32 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
 
         // Withdraw fails. Slashed amount remains in the pool
         assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
+    }
+
+    function testWithdrawFailsIfTransferReturnsFalse() public {
+        // Setup pool with MockMalformedERC20
+        MockMalformedERC20 malformedUsdc = new MockMalformedERC20("Malformed USDC", "USDC", usdcDecimals);
+        SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
+            instructor, fundsManager, address(malformedUsdc), flatDepositAmount, courseEndTime
+        );
+        address student = address(0x789);
+        malformedUsdc.mint(student, flatDepositAmount);
+        // Approve pool
+        vm.prank(student);
+        malformedUsdc.approve(address(pool_), flatDepositAmount);
+        // Deposit (should succeed)
+        vm.prank(student);
+        pool_.deposit();
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+        // Set transferFrom to succeed, but transfer to fail
+        // transfer in MockMalformedERC20 inherits from ERC20, so we need to override it to simulate failure
+        // Instead, we simulate by slashing to zero and then trying to withdraw, which already has a test
+        // So here, we simulate transfer failure by toggling failTransferFrom before withdraw
+        malformedUsdc.setFailTransfer(true);
+        vm.prank(student);
+        vm.expectRevert(bytes4(keccak256("USDCTransferFailed()")));
+        pool_.withdraw();
     }
 
     /**
@@ -752,6 +798,37 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
         pool.transferSlashedToFundsManager();
+    }
+
+    function testTransferSlashedToFundsManagerFailsIfTransferReturnsFalse() public {
+        // Setup pool with MockMalformedERC20
+        MockMalformedERC20 malformedUsdc = new MockMalformedERC20("Malformed USDC", "USDC", usdcDecimals);
+        SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
+            instructor, fundsManager, address(malformedUsdc), flatDepositAmount, courseEndTime
+        );
+        address student = address(0x789);
+        malformedUsdc.mint(student, flatDepositAmount);
+        // Approve pool
+        vm.prank(student);
+        malformedUsdc.approve(address(pool_), flatDepositAmount);
+        // Deposit (should succeed)
+        vm.prank(student);
+        pool_.deposit();
+        // Owner slashes full deposit
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = flatDepositAmount;
+        vm.prank(instructor);
+        pool_.slashMany(students, amounts);
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+        // Set transfer to fail
+        malformedUsdc.setFailTransfer(true);
+        // Try to transfer slashed funds to fundsManager, should revert
+        vm.prank(fundsManager);
+        vm.expectRevert(bytes4(keccak256("USDCTransferFailed()")));
+        pool_.transferSlashedToFundsManager();
     }
 
     /**

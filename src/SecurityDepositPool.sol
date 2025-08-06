@@ -194,7 +194,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     /**
      * @dev Internal function to withdraw a student's remaining deposit.
      * Reverts if no deposit or deposit is zero.
-     * 
+     *
      * Any functions that call _withdraw should ensure the course has ended
      */
     function _withdraw(address student) internal {
@@ -213,7 +213,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     /**
      * @dev Internal function to slash a student's deposit by a given amount.
      * Reverts if insufficient deposit.
-     * 
+     *
      * Any functions that call _slash should ensure the course has not ended.
      */
     function _slash(address student, uint256 amount) internal {
