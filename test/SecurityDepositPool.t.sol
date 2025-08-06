@@ -20,6 +20,11 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         pool = new SecurityDepositPool(instructor, supervisor, address(mockUsdc), flatDepositAmount, courseEndTime);
     }
 
+    /**
+     *
+     * Deposit
+     *
+     */
     function testDepositSucceeds() public {
         address student = address(0x789);
         // Mint USDC to student and approve pool
@@ -57,7 +62,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 
-    function testDepositFailsIfCourseEnded() public {
+    function testDepositFailsIfCourseFinalized() public {
         address student = address(0x789);
         mockUsdc.mint(student, flatDepositAmount);
         vm.prank(student);
@@ -67,7 +72,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.warp(block.timestamp + 31 days);
 
         vm.prank(student);
-        vm.expectRevert(bytes4(keccak256("CourseEnded()")));
+        vm.expectRevert(bytes4(keccak256("CourseFinalized()")));
         pool.deposit();
         assertEq(mockUsdc.balanceOf(address(pool)), 0);
     }
@@ -100,7 +105,12 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 
-    function testWithdrawFailsIfCourseNotEnded() public {
+    /**
+     *
+     * Withdraw
+     *
+     */
+    function testWithdrawFailsIfCourseNotFinalized() public {
         address student = address(0x789);
         mockUsdc.mint(student, flatDepositAmount);
         vm.prank(student);
@@ -110,7 +120,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
 
         // Do NOT warp time; course is still ongoing
         vm.prank(student);
-        vm.expectRevert(bytes4(keccak256("CourseNotEnded()")));
+        vm.expectRevert(bytes4(keccak256("CourseNotFinalized()")));
         pool.withdraw();
         assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
@@ -237,6 +247,11 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount);
     }
 
+    /**
+     *
+     * Withdraw Many
+     *
+     */
     function testWithdrawManySucceeds() public {
         address student1 = address(0x789);
         address student2 = address(0xABC);
@@ -331,9 +346,10 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.prank(student1);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", student1));
         pool.withdrawMany(students);
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount * 2);
     }
 
-    function testWithdrawManyFailsIfCourseNotEnded() public {
+    function testWithdrawManyFailsIfCourseNotFinalized() public {
         address student1 = address(0x789);
         address student2 = address(0xABC);
         mockUsdc.mint(student1, flatDepositAmount);
@@ -354,8 +370,10 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
 
         // Do NOT warp time; course is still ongoing
         vm.prank(instructor); // Only owner can call
-        vm.expectRevert(bytes4(keccak256("CourseNotEnded()")));
+        vm.expectRevert(bytes4(keccak256("CourseNotFinalized()")));
         pool.withdrawMany(students);
+
+        assertEq(mockUsdc.balanceOf(address(pool)), flatDepositAmount * 2);
     }
 
     function testWithdrawManyWithPartialSlashing() public {

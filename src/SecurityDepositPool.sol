@@ -14,7 +14,7 @@ library Errors {
     // Deposit errors
     error AlreadyDeposited();
     error USDCTransferFailed();
-    error CourseEnded();
+    error CourseFinalized();
 
     // Slash errors
     error InsufficientDeposit();
@@ -23,10 +23,10 @@ library Errors {
     // Take errors
     error NoRemainingDeposit();
     error HasNotDeposited();
-    error CourseNotEnded();
+    error CourseNotFinalized();
 
     // FundsManager errors
-    error NotFundsManager();
+    error NotFundsManagerOrOwner();
     error NoSlashedAmountToTransfer();
     error SlashedAmountAlreadyTransferred();
 }
@@ -48,19 +48,27 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     bool public isTotalSlashedTransferred;
     // Timestamp at which the course is supposed to end.
     // Also the time after which deposits can be claimed back
-    uint256 public courseEndTime;
+    uint256 public courseFinalizedTime;
 
     mapping(address => uint256) public deposits;
     mapping(address => bool) public hasDeposited;
 
-    modifier onlyFundsManager() {
-        if (msg.sender != fundsManager) revert Errors.NotFundsManager();
+    modifier onlyFundsManagerOrOwner() {
+        if (msg.sender != fundsManager && msg.sender != owner()) revert Errors.NotFundsManagerOrOwner();
         _;
     }
 
-    // Unless the course has ended, students cannot take their deposits back
-    modifier courseEnded() {
-        if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
+    // Asserts that the function is called after the course has been finalized
+    modifier afterCourseFinalized() {
+        // If current time is before course's end time, revert
+        if (block.timestamp < courseFinalizedTime) revert Errors.CourseNotFinalized();
+        _;
+    }
+
+    // Asserts that the function is called before the course has been finalized
+    modifier beforeCourseFinalized() {
+        // If current time is after course's end time, revert
+        if (block.timestamp >= courseFinalizedTime) revert Errors.CourseFinalized();
         _;
     }
 
@@ -69,7 +77,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         address _fundsManager,
         address _usdc,
         uint256 _flatDepositAmount,
-        uint256 _courseEndTime
+        uint256 _courseFinalizedTime
     ) Ownable(_instructor) {
         if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
         if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
@@ -78,14 +86,16 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         fundsManager = _fundsManager;
         usdc = IERC20(_usdc);
         flatDepositAmount = _flatDepositAmount;
-        courseEndTime = _courseEndTime;
+        courseFinalizedTime = _courseFinalizedTime;
     }
 
-    function deposit() external {
+    function deposit()
+        external
+        // Ensure the course has not ended (a student can join during the course too)
+        beforeCourseFinalized
+    {
         // Ensure the student has not already deposited
         if (hasDeposited[msg.sender]) revert Errors.AlreadyDeposited();
-        // Ensure the course has not ended (a student can join during the course too)
-        if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
 
         bool success = usdc.transferFrom(msg.sender, address(this), flatDepositAmount);
         if (!success) revert Errors.USDCTransferFailed();
@@ -96,7 +106,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit Deposited(msg.sender, flatDepositAmount);
     }
 
-    function withdraw() external courseEnded {
+    function withdraw() external afterCourseFinalized {
         _withdraw(msg.sender);
 
         emit Withdrawn(msg.sender);
@@ -106,7 +116,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // List of students will be externally indexed
         // to save gas
         address[] calldata students
-    ) external onlyOwner courseEnded {
+    ) external onlyOwner afterCourseFinalized {
         for (uint256 i = 0; i < students.length; i++) {
             _withdraw(students[i]);
         }
@@ -114,11 +124,17 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit WithdrawnMany(students);
     }
 
-    function slashMany(address[] calldata students, uint256[] calldata amounts) external onlyOwner {
+    function slashMany(address[] calldata students, uint256[] calldata amounts)
+        external
+        onlyOwner
         // If the course has ended, slashing is not allowed anymore
-        if (courseEndTime < block.timestamp) revert Errors.CourseEnded();
-        // After the
+        beforeCourseFinalized
+    {
+        // Transferring the slashed amount is one-time operation.
+        // If it is already done, can't slash anymore because the slashed funds
+        // can't be transferred anymore
         if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
+        // Ensure the lengths of the arrays match
         if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
 
         for (uint256 i = 0; i < students.length; i++) {
@@ -128,12 +144,12 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         emit SlashedMany(students, amounts);
     }
 
-    function transferSlashedToFundsManager() external onlyFundsManager {
-        // Ensure the course has ended before transferring slashed amounts
-        if (block.timestamp < courseEndTime) revert Errors.CourseNotEnded();
+    function transferSlashedToFundsManager() external onlyFundsManagerOrOwner afterCourseFinalized {
         // Ensure there is a slashed amount to transfer
         if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
-        // Ensure the slashed amount has not been transferred already
+        // Ensure the slashed amount has not been transferred already.
+        // Transferring the slashed amount is a one-time operation in the
+        // lifetime of the contract, so if it is already done, can't transfer again
         if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
 
         uint256 amount = totalSlashed;
