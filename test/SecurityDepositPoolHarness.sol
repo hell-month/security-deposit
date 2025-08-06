@@ -12,11 +12,11 @@ contract SecurityDepositPoolHarness is SecurityDepositPool {
         uint256 courseEndTime
     ) SecurityDepositPool(instructor, supervisor, usdcAddress, flatDepositAmount, courseEndTime) {}
 
-    function withdraw(address student) public {
+    function withdrawHarness(address student) public {
         _withdraw(student);
     }
 
-    function slash(address student, uint256 amount) public {
+    function slashHarness(address student, uint256 amount) public {
         _slash(student, amount);
     }
 

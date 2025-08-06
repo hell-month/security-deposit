@@ -9,7 +9,7 @@ library Errors {
     // Constructor errors
     error ZeroFundsManagerAddress();
     error ZeroUSDCAddress();
-    error ZeroDepositAmount();
+    error ZeroFlatDepositAmount();
     error CourseFinalizedTimeInPast();
     error CourseFinalizedTimeInDistantFuture();
 
@@ -83,7 +83,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     ) Ownable(_instructor) {
         if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
         if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
-        if (_flatDepositAmount == 0) revert Errors.ZeroDepositAmount();
+        if (_flatDepositAmount == 0) revert Errors.ZeroFlatDepositAmount();
         if (_courseFinalizedTime < block.timestamp) revert Errors.CourseFinalizedTimeInPast();
         if (_courseFinalizedTime > block.timestamp + 60 days) revert Errors.CourseFinalizedTimeInDistantFuture();
 

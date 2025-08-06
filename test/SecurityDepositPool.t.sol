@@ -59,12 +59,12 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         new SecurityDepositPoolHarness(instructor_, fundsManager_, address(0), flatDepositAmount_, courseFinalizedTime_);
     }
 
-    function testConstructorFailsIfZeroDepositAmount() public {
+    function testConstructorFailsIfZeroFlatDepositAmount() public {
         address instructor_ = address(0x111);
         address fundsManager_ = address(0x222);
         address usdc_ = address(0x333);
         uint256 courseFinalizedTime_ = block.timestamp + 10 days;
-        vm.expectRevert(bytes4(keccak256("ZeroDepositAmount()")));
+        vm.expectRevert(bytes4(keccak256("ZeroFlatDepositAmount()")));
         new SecurityDepositPoolHarness(instructor_, fundsManager_, usdc_, 0, courseFinalizedTime_);
     }
 
@@ -751,5 +751,154 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.prank(supervisor);
         vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
         pool.transferSlashedToFundsManager();
+    }
+
+    /**
+     *
+     * Withdraw Harness
+     *
+     * Since this function is internal and not guarded by
+     * afterCourseFinalized modifier, we don't need to warp time
+     *
+     */
+    function testWithdrawFailsIfHasNotDeposited() public {
+        address student = address(0x789);
+
+        vm.prank(student);
+        vm.expectRevert(bytes4(keccak256("HasNotDeposited()")));
+        pool.withdrawHarness(student);
+    }
+
+    function testWithdrawFailsIfNoRemainingDeposit() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Slash 100% of deposit
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = flatDepositAmount;
+        vm.prank(instructor);
+        pool.slashMany(students, amounts);
+
+        vm.prank(student);
+        vm.expectRevert(bytes4(keccak256("NoRemainingDeposit()")));
+        pool.withdrawHarness(student);
+    }
+
+    function testWithdrawSucceedsWithPartialDeposit() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Slash half of deposit
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = flatDepositAmount / 2;
+        vm.prank(instructor);
+        pool.slashMany(students, amounts);
+
+        uint256 studentBalanceBefore = mockUsdc.balanceOf(student);
+        assertEq(studentBalanceBefore, 0);
+        vm.prank(student);
+        pool.withdrawHarness(student);
+        // Student should get only the remaining deposit
+        assertEq(mockUsdc.balanceOf(student), flatDepositAmount / 2);
+        // Deposit should be reset
+        assertEq(pool.deposits(student), 0);
+    }
+
+    function testWithdrawSucceedsWithFullDeposit() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        uint256 studentBalanceBefore = mockUsdc.balanceOf(student);
+        assertEq(studentBalanceBefore, 0);
+        vm.prank(student);
+        pool.withdrawHarness(student);
+        // Student should get their full deposit back
+        assertEq(mockUsdc.balanceOf(student), flatDepositAmount);
+        // Deposit should be reset
+        assertEq(pool.deposits(student), 0);
+    }
+
+    /**
+     *
+     * Slash Harness
+     *
+     * Since this function is internal and not guarded by
+     * beforeCourseFinalized modifier, we don't need to warp time
+     *
+     */
+    function testSlashHarnessSucceeds() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Slash half the deposit
+        uint256 slashAmount = flatDepositAmount / 2;
+        pool.slashHarness(student, slashAmount);
+
+        // Deposit should be reduced
+        assertEq(pool.deposits(student), flatDepositAmount - slashAmount);
+        // totalSlashed should increase
+        assertEq(pool.totalSlashed(), slashAmount);
+    }
+
+    function testSlashHarnessFailsIfHasNotDeposited() public {
+        address student = address(0x789);
+        uint256 slashAmount = 1 ether;
+        vm.expectRevert(bytes4(keccak256("HasNotDeposited()")));
+        pool.slashHarness(student, slashAmount);
+    }
+
+    function testSlashHarnessFailsIfInsufficientDeposit() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Try to slash more than deposited
+        uint256 slashAmount = flatDepositAmount + 1;
+        vm.expectRevert(bytes4(keccak256("InsufficientDeposit()")));
+        pool.slashHarness(student, slashAmount);
+    }
+
+    function testSlashHarnessMultipleCalls() public {
+        address student = address(0x789);
+        mockUsdc.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdc.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+
+        // Slash a portion
+        uint256 slashAmount1 = flatDepositAmount / 3;
+        pool.slashHarness(student, slashAmount1);
+        assertEq(pool.deposits(student), flatDepositAmount - slashAmount1);
+        assertEq(pool.totalSlashed(), slashAmount1);
+
+        // Slash another portion
+        uint256 slashAmount2 = flatDepositAmount / 6;
+        pool.slashHarness(student, slashAmount2);
+        assertEq(pool.deposits(student), flatDepositAmount - slashAmount1 - slashAmount2);
+        assertEq(pool.totalSlashed(), slashAmount1 + slashAmount2);
     }
 }
