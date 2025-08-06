@@ -150,10 +150,13 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // If it is already done, can't slash anymore because the slashed funds
         // can't be transferred anymore.
         //
-        // In fact, the function will revert at beforeCourseFinalized because
+        // In fact, the function will revert at beforeCourseFinalized already because
         // transferSlashedToFundsManager() will be called after the course has ended, whereas
-        // slashMany() can be called only before the course has ended.
-        if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
+        // slashMany() can be called only before the course has ended, so it's safe to comment
+        // this out. Leaving it for reference.
+        //
+        // if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
+
         // Ensure the lengths of the arrays match
         if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
 
@@ -176,7 +179,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     {
         // Ensure the slashed amount has not been transferred already.
         // Transferring the slashed amount is a one-time operation in the
-        // lifetime of the contract, so if it is already done, can't transfer again
+        // lifetime of the contract, so if it is already done, can't transfer again.
         if (isTotalSlashedTransferred) revert Errors.SlashedAmountAlreadyTransferred();
         // Ensure there is a slashed amount to transfer
         if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
