@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.30;
 
 interface ISecurityDepositPool {
     event Deposited(address indexed student, uint256 amount);

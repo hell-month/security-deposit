@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -36,16 +36,17 @@ library Errors {
  * deposits after the course ends.
  */
 contract SecurityDepositPool is Ownable, ISecurityDepositPool {
-    address public fundsManager;
+    address public immutable fundsManager;
     // USDC on Ethereum complies fully with the ERC20 standard,
     // so no need to use .safeTransferFrom() or .safeTransfer()
-    IERC20 public usdc;
-    uint256 public flatDepositAmount;
-    uint256 public totalSlashed;
-    bool public isTotalSlashedTransferred;
+    IERC20 public immutable usdc;
+    uint256 public immutable flatDepositAmount;
     // Timestamp at which the course is supposed to end.
     // Also the time after which deposits can be claimed back
-    uint256 public courseFinalizedTime;
+    uint256 public immutable courseFinalizedTime;
+
+    uint256 public totalSlashed;
+    bool public isTotalSlashedTransferred;
 
     mapping(address => uint256) public deposits;
     mapping(address => bool) public hasDeposited;
@@ -83,7 +84,9 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
         if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
         if (_flatDepositAmount == 0) revert Errors.ZeroFlatDepositAmount();
+        // slither-disable-next-line timestamp
         if (_courseFinalizedTime < block.timestamp) revert Errors.CourseFinalizedTimeInPast();
+        // slither-disable-next-line timestamp
         if (_courseFinalizedTime > block.timestamp + 60 days) revert Errors.CourseFinalizedTimeInDistantFuture();
 
         fundsManager = _fundsManager;
@@ -103,42 +106,53 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // Ensure the student has not already deposited
         if (hasDeposited[msg.sender]) revert Errors.AlreadyDeposited();
 
-        bool success = usdc.transferFrom(msg.sender, address(this), flatDepositAmount);
-        if (!success) revert Errors.USDCTransferFailed();
-
         deposits[msg.sender] = flatDepositAmount;
         hasDeposited[msg.sender] = true;
-
         emit Deposited(msg.sender, flatDepositAmount);
+
+        // USDC contract is trusted
+        // slither-disable-next-line reentrancy-no-eth
+        bool success = usdc.transferFrom(msg.sender, address(this), flatDepositAmount);
+        if (!success) revert Errors.USDCTransferFailed();
     }
 
     /**
      * @dev Allows a student to withdraw their remaining deposit after the course is finalized.
      */
     function withdraw() external afterCourseFinalized {
-        _withdraw(msg.sender);
-
         emit Withdrawn(msg.sender);
+
+        _withdraw(msg.sender);
     }
 
     /**
      * @dev Allows the owner to withdraw deposits for multiple students after the course is finalized.
+     *
+     * Gas might be a problem if the list of students is too long, but
+     * 1. it is expected that the list will be reasonably short, and
+     * 2. it can always be called in multiple batches.
+     *
+     * In the worst case scenario, the user can call withdraw() himself by paying for his own gas.
      */
     function withdrawMany(
         // List of students will be externally indexed
         // to save gas
         address[] calldata students
     ) external onlyOwner afterCourseFinalized {
+        emit WithdrawnMany(students);
+
         for (uint256 i = 0; i < students.length; i++) {
             _withdraw(students[i]);
         }
-
-        emit WithdrawnMany(students);
     }
 
     /**
      * @dev Allows the owner to slash deposits of multiple students before the course ends.
      * Slashed funds are tracked for later transfer.
+     *
+     * Gas might be a problem if the list of students is too long, but
+     * 1. it is expected that the list will be reasonably short, and
+     * 2. it can always be called in multiple batches.
      */
     function slashMany(address[] calldata students, uint256[] calldata amounts)
         external
@@ -160,11 +174,11 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // Ensure the lengths of the arrays match
         if (students.length != amounts.length) revert Errors.ArrayLengthMismatch();
 
+        emit SlashedMany(students, amounts);
+
         for (uint256 i = 0; i < students.length; i++) {
             _slash(students[i], amounts[i]);
         }
-
-        emit SlashedMany(students, amounts);
     }
 
     /**
@@ -184,14 +198,14 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         // Ensure there is a slashed amount to transfer
         if (totalSlashed == 0) revert Errors.NoSlashedAmountToTransfer();
 
-        uint256 amount = totalSlashed;
         totalSlashed = 0;
-        bool success = usdc.transfer(fundsManager, amount);
-        if (!success) revert Errors.USDCTransferFailed();
-
         isTotalSlashedTransferred = true;
 
+        uint256 amount = totalSlashed;
         emit SlashedTransferred(fundsManager, amount);
+
+        bool success = usdc.transfer(fundsManager, amount);
+        if (!success) revert Errors.USDCTransferFailed();
     }
 
     /**
@@ -209,6 +223,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (remainingAmount == 0) revert Errors.NoRemainingDeposit();
 
         deposits[student] = 0;
+        // slither-disable-next-line calls-loop
         bool success = usdc.transfer(student, remainingAmount);
         if (!success) revert Errors.USDCTransferFailed();
     }
