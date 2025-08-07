@@ -37,6 +37,9 @@ library SafeMath {
         assert(c >= a);
         return c;
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testA() public {}
 }
 
 /**
@@ -51,7 +54,7 @@ contract Ownable {
      * @dev The Ownable constructor sets the original `owner` of the contract to the sender
      * account.
      */
-    constructor() public {
+    constructor() {
         owner = msg.sender;
     }
 
@@ -72,6 +75,9 @@ contract Ownable {
             owner = newOwner;
         }
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testB() public {}
 }
 
 /**
@@ -145,6 +151,9 @@ abstract contract BasicToken is Ownable, ERC20Basic {
     function balanceOf(address _owner) public virtual override returns (uint256 balance) {
         return balances[_owner];
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testC() public {}
 }
 
 /**
@@ -209,6 +218,9 @@ abstract contract StandardToken is BasicToken, ERC20 {
     function allowance(address _owner, address _spender) public virtual override returns (uint256 remaining) {
         return allowed[_owner][_spender];
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testD() public {}
 }
 
 /**
@@ -252,6 +264,9 @@ contract Pausable is Ownable {
         paused = false;
         emit Unpause();
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testE() public {}
 }
 
 abstract contract BlackList is Ownable, BasicToken {
@@ -283,6 +298,9 @@ abstract contract BlackList is Ownable, BasicToken {
         _totalSupply -= dirtyFunds;
         emit DestroyedBlackFunds(_blackListedUser, dirtyFunds);
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testF() public {}
 
     event DestroyedBlackFunds(address _blackListedUser, uint256 _balance);
 
@@ -433,6 +451,9 @@ contract MockUSDT is Pausable, StandardToken, BlackList {
 
         emit Params(basisPointsRate, maximumFee);
     }
+
+    // Adding this to be excluded from forge coverage report
+    function testG() public {}
 
     // Called when new token are issued
     event Issue(uint256 amount);
