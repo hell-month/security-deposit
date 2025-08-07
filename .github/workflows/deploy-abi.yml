@@ -1,0 +1,43 @@
+name: Deploy ABI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-abi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        
+      - name: Build contracts
+        run: forge build
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org/'
+          scope: '@hell-month'
+      - name: Extract ABI and generate TypeScript
+        run: |
+          # Extract ABI from JSON file
+          ABI=$(cat out/SecurityDepositPool.sol/SecurityDepositPool.json | jq -c '.abi')
+          
+          # echo to sdk/src/index.ts which already exists
+          echo "// This file is auto-generated. Do not edit." > sdk/src/index.ts
+          echo "export const SecurityDepositPoolABI = $ABI as const;" >> sdk/src/index.ts
+          echo "export type SecurityDepositPoolABIType = typeof SecurityDepositPoolABI;" >> sdk/src/index.ts
+      - name: Prep
+        working-directory: sdk
+        run: |
+          npm ci
+      - name: Publish to NPM
+        working-directory: sdk
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
