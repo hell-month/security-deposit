@@ -299,11 +299,8 @@ abstract contract UpgradedStandardToken is StandardToken {
     function approveByLegacy(address from, address spender, uint256 value) public virtual;
 }
 
-contract MockMalformedERC20 is Pausable, StandardToken, BlackList {
+contract MockUSDT is Pausable, StandardToken, BlackList {
     using SafeMath for uint256;
-
-    bool failTransferFrom = false;
-    bool failTransfer = false;
 
     string public name;
     string public symbol;
@@ -326,20 +323,8 @@ contract MockMalformedERC20 is Pausable, StandardToken, BlackList {
         deprecated = false;
     }
 
-    function setFailTransferFrom(bool _fail) public {
-        failTransferFrom = _fail;
-    }
-
-    function setFailTransfer(bool _fail) public {
-        failTransfer = _fail;
-    }
-
     // Forward ERC20 methods to upgraded contract if this one is deprecated
     function transfer(address _to, uint256 _value) public override(BasicToken, ERC20Basic) whenNotPaused {
-        if (failTransfer) {
-            require(false);
-        }
-
         require(!isBlackListed[msg.sender]);
         if (deprecated) {
             return UpgradedStandardToken(upgradedAddress).transferByLegacy(msg.sender, _to, _value);
@@ -350,10 +335,6 @@ contract MockMalformedERC20 is Pausable, StandardToken, BlackList {
 
     // Forward ERC20 methods to upgraded contract if this one is deprecated
     function transferFrom(address _from, address _to, uint256 _value) public override whenNotPaused {
-        if (failTransferFrom) {
-            require(false);
-        }
-
         require(!isBlackListed[_from]);
         if (deprecated) {
             return UpgradedStandardToken(upgradedAddress).transferFromByLegacy(msg.sender, _from, _to, _value);

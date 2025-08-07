@@ -3,17 +3,18 @@ pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./ISecurityDepositPool.sol";
 
 library Errors {
     error ZeroFundsManagerAddress();
-    error ZeroUSDCAddress();
+    error ZeroUSDTAddress();
     error ZeroFlatDepositAmount();
     error CourseFinalizedTimeInPast();
     error CourseFinalizedTimeInDistantFuture();
 
     error AlreadyDeposited();
-    error USDCTransferFailed();
+    error USDTTransferFailed();
     error CourseFinalized();
 
     error InsufficientDeposit();
@@ -31,15 +32,17 @@ library Errors {
 /**
  * @title SecurityDepositPool
  * @notice This contract manages the security deposits for a course.
- * It allows students to deposit USDC, slashes deposits based on the
+ * It allows students to deposit USDT, slashes deposits based on the
  * discretion of the owner (instructor), and facilitates the return of
  * deposits after the course ends.
  */
 contract SecurityDepositPool is Ownable, ISecurityDepositPool {
+    using SafeERC20 for IERC20;
+
     address public immutable fundsManager;
-    // USDC on Ethereum complies fully with the ERC20 standard,
-    // so no need to use .safeTransferFrom() or .safeTransfer()
-    IERC20 public immutable usdc;
+    // USDT on Ethereum does not comply fully with the ERC20 standard,
+    // so we need to use .safeTransferFrom() or .safeTransfer()
+    IERC20 public immutable usdt;
     uint256 public immutable flatDepositAmount;
     // Timestamp at which the course is supposed to end.
     // Also the time after which deposits can be claimed back
@@ -71,18 +74,18 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     }
 
     /**
-     * @dev Initializes the contract with instructor, funds manager, USDC token, deposit amount, and course end time.
+     * @dev Initializes the contract with instructor, funds manager, USDT token, deposit amount, and course end time.
      * Performs validation on input parameters.
      */
     constructor(
         address _instructor,
         address _fundsManager,
-        address _usdc,
+        address _usdt,
         uint256 _flatDepositAmount,
         uint256 _courseFinalizedTime
     ) Ownable(_instructor) {
         if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
-        if (_usdc == address(0)) revert Errors.ZeroUSDCAddress();
+        if (_usdt == address(0)) revert Errors.ZeroUSDTAddress();
         if (_flatDepositAmount == 0) revert Errors.ZeroFlatDepositAmount();
         // slither-disable-next-line timestamp
         if (_courseFinalizedTime < block.timestamp) revert Errors.CourseFinalizedTimeInPast();
@@ -90,13 +93,13 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (_courseFinalizedTime > block.timestamp + 60 days) revert Errors.CourseFinalizedTimeInDistantFuture();
 
         fundsManager = _fundsManager;
-        usdc = IERC20(_usdc);
+        usdt = IERC20(_usdt);
         flatDepositAmount = _flatDepositAmount;
         courseFinalizedTime = _courseFinalizedTime;
     }
 
     /**
-     * @dev Allows a student to deposit a flat USDC collateral before the course ends. Reverts if already deposited.
+     * @dev Allows a student to deposit a flat USDT collateral before the course ends. Reverts if already deposited.
      */
     function deposit()
         external
@@ -110,10 +113,9 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         hasDeposited[msg.sender] = true;
         emit Deposited(msg.sender, flatDepositAmount);
 
-        // USDC contract is trusted
+        // USDT contract is trusted, so no reentry protection is needed
         // slither-disable-next-line reentrancy-no-eth
-        bool success = usdc.transferFrom(msg.sender, address(this), flatDepositAmount);
-        if (!success) revert Errors.USDCTransferFailed();
+        usdt.safeTransferFrom(msg.sender, address(this), flatDepositAmount);
     }
 
     /**
@@ -204,8 +206,8 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
 
         emit SlashedTransferred(fundsManager, amount);
 
-        bool success = usdc.transfer(fundsManager, amount);
-        if (!success) revert Errors.USDCTransferFailed();
+        // USDT contract is trusted
+        usdt.safeTransfer(fundsManager, amount);
     }
 
     /**
@@ -223,9 +225,9 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (remainingAmount == 0) revert Errors.NoRemainingDeposit();
 
         deposits[student] = 0;
+        // USDT contract is trusted
         // slither-disable-next-line calls-loop
-        bool success = usdc.transfer(student, remainingAmount);
-        if (!success) revert Errors.USDCTransferFailed();
+        usdt.safeTransfer(student, remainingAmount);
     }
 
     /**
