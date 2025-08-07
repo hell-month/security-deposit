@@ -22,15 +22,6 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org/'
           scope: '@hell-month'
-      - name: Extract ABI and generate TypeScript
-        run: |
-          # Extract ABI from JSON file
-          ABI=$(cat out/SecurityDepositPool.sol/SecurityDepositPool.json | jq -c '.abi')
-          
-          # echo to sdk/src/index.ts which already exists
-          echo "// This file is auto-generated. Do not edit." > sdk/src/index.ts
-          echo "export const SecurityDepositPoolABI = $ABI as const;" >> sdk/src/index.ts
-          echo "export type SecurityDepositPoolABIType = typeof SecurityDepositPoolABI;" >> sdk/src/index.ts
       - name: Prep
         working-directory: sdk
         run: |
