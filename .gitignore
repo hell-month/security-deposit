@@ -13,5 +13,6 @@ docs/
 # Dotenv file
 .env
 .env.testnet
+.env.testnet.ledger
 
 broadcast/
