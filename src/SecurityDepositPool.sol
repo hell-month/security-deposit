@@ -8,6 +8,8 @@ import "./ISecurityDepositPool.sol";
 
 library Errors {
     error ZeroFundsManagerAddress();
+    error ZeroBackupFundsManagerAddress();
+    error DuplicateFundsManagerAddress();
     error ZeroUSDTAddress();
     error ZeroFlatDepositAmount();
     error CourseFinalizedTimeInPast();
@@ -40,6 +42,8 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     using SafeERC20 for IERC20;
 
     address public immutable fundsManager;
+    // In case the funds manager is not functional anymore, the backup funds manager can be used
+    address public immutable backupFundsManager;
     // USDT on Ethereum does not comply fully with the ERC20 standard,
     // so we need to use .safeTransferFrom() or .safeTransfer()
     IERC20 public immutable usdt;
@@ -80,11 +84,14 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     constructor(
         address _instructor,
         address _fundsManager,
+        address _backupFundsManager,
         address _usdt,
         uint256 _flatDepositAmount,
         uint256 _courseFinalizedTime
     ) Ownable(_instructor) {
         if (_fundsManager == address(0)) revert Errors.ZeroFundsManagerAddress();
+        if (_backupFundsManager == address(0)) revert Errors.ZeroBackupFundsManagerAddress();
+        if (_fundsManager == _backupFundsManager) revert Errors.DuplicateFundsManagerAddress();
         if (_usdt == address(0)) revert Errors.ZeroUSDTAddress();
         if (_flatDepositAmount == 0) revert Errors.ZeroFlatDepositAmount();
         // slither-disable-next-line timestamp
@@ -93,6 +100,7 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         if (_courseFinalizedTime > block.timestamp + 60 days) revert Errors.CourseFinalizedTimeInDistantFuture();
 
         fundsManager = _fundsManager;
+        backupFundsManager = _backupFundsManager;
         usdt = IERC20(_usdt);
         flatDepositAmount = _flatDepositAmount;
         courseFinalizedTime = _courseFinalizedTime;
@@ -186,8 +194,12 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
     /**
      * @dev Transfers the total slashed amount to the funds manager after the course is finalized.
      * Can only be called once.
+     *
+     * Backup funds manager is ONLY effective in the case the funds manager can't be accessed anymore
+     * (e.g. lost private key or hardware wallet, etc). It does not prevent the funds manager
+     * from transferring the slashed amount to himself if his private key is compromised.
      */
-    function transferSlashedToFundsManager()
+    function transferSlashedToFundsManager(bool useBackupFundsManager)
         external
         onlyFundsManagerOrOwner
         // Transferring the slashed amount can only be done after the course has been finalized
@@ -204,10 +216,11 @@ contract SecurityDepositPool is Ownable, ISecurityDepositPool {
         uint256 amount = totalSlashed;
         totalSlashed = 0;
 
-        emit SlashedTransferred(fundsManager, amount);
+        address effectiveFundsManager = useBackupFundsManager ? backupFundsManager : fundsManager;
+        emit SlashedTransferred(effectiveFundsManager, amount);
 
         // USDT contract is trusted
-        usdt.safeTransfer(fundsManager, amount);
+        usdt.safeTransfer(effectiveFundsManager, amount);
     }
 
     /**

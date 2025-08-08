@@ -7,10 +7,13 @@ contract SecurityDepositPoolHarness is SecurityDepositPool {
     constructor(
         address instructor,
         address fundsManager,
+        address backupFundsManager,
         address usdtAddress,
         uint256 flatDepositAmount,
         uint256 courseEndTime
-    ) SecurityDepositPool(instructor, fundsManager, usdtAddress, flatDepositAmount, courseEndTime) {}
+    )
+        SecurityDepositPool(instructor, fundsManager, backupFundsManager, usdtAddress, flatDepositAmount, courseEndTime)
+    {}
 
     function withdrawHarness(address student) public {
         _withdraw(student);

@@ -12,6 +12,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
     MockERC20 public mockUsdt;
     address public instructor = address(0x123);
     address public fundsManager = address(0x456);
+    address public backupFundsManager = address(0x789);
     uint8 public usdtDecimals = 6;
     uint256 public flatDepositAmount = 100 * 10 ** usdtDecimals; // 100 USDT
     uint256 courseEndTime = block.timestamp + 30 days;
@@ -22,7 +23,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
     function setUp() public {
         mockUsdt = new MockERC20("Mock USDT", "USDT", usdtDecimals);
         pool = new SecurityDepositPoolHarness(
-            instructor, fundsManager, address(mockUsdt), flatDepositAmount, courseEndTime
+            instructor, fundsManager, backupFundsManager, address(mockUsdt), flatDepositAmount, courseEndTime
         );
 
         // Initialize student addresses
@@ -107,7 +108,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         pool.withdraw();
 
         // Batch withdrawal by instructor
-        uint256 poolBefore = mockUsdt.balanceOf(address(pool));
+        uint256 poolBefore_ = mockUsdt.balanceOf(address(pool));
 
         address[] memory batchStudents = new address[](6);
         batchStudents[0] = students[0]; // 67% remaining (33% slashed)
@@ -123,7 +124,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         // Verify withdrawals
         assertEq(
             mockUsdt.balanceOf(address(pool)),
-            poolBefore - (flatDepositAmount - (flatDepositAmount * 33) / 100)
+            poolBefore_ - (flatDepositAmount - (flatDepositAmount * 33) / 100)
                 - (flatDepositAmount - (flatDepositAmount * 377) / 1000)
                 - (flatDepositAmount - (flatDepositAmount * 625) / 1000) - flatDepositAmount - flatDepositAmount
                 - flatDepositAmount
@@ -142,7 +143,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         uint256 poolBefore = mockUsdt.balanceOf(address(pool));
 
         vm.prank(fundsManager);
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
 
         assertEq(mockUsdt.balanceOf(fundsManager), fundsManagerBefore + totalSlashed);
         assertEq(pool.totalSlashed(), 0);
@@ -152,7 +153,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         // Test double transfer
         vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
     }
 
     function _verifyFinalState() internal {
@@ -251,7 +252,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         uint256 poolBeforeTransfer = mockUsdt.balanceOf(address(pool));
 
         vm.prank(fundsManager);
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
 
         assertEq(mockUsdt.balanceOf(fundsManager), fundsManagerBefore + totalSlashed);
         assertEq(pool.totalSlashed(), 0);
@@ -327,7 +328,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         // Test double transfer of slashed funds
         vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
 
         // Phase 6: Final verification
         _verifyFinalState();
@@ -336,7 +337,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
     function testMalformedERC20AndErrors() public {
         MockMalformedERC20 malformedUsdt = new MockMalformedERC20("Malformed USDT", "USDT", usdtDecimals);
         SecurityDepositPoolHarness malformedPool = new SecurityDepositPoolHarness(
-            instructor, fundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
+            instructor, fundsManager, backupFundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
         );
 
         // Setup successful deposits first
@@ -381,7 +382,7 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         // Test transfer failure
         vm.prank(fundsManager);
         vm.expectRevert();
-        malformedPool.transferSlashedToFundsManager();
+        malformedPool.transferSlashedToFundsManager(false);
 
         // Reset and verify success
         malformedUsdt.setFailTransfer(false);
@@ -400,6 +401,6 @@ contract IntegrationTest is Test, ISecurityDepositPool {
 
         vm.prank(students[0]); // Unauthorized
         vm.expectRevert(bytes4(keccak256("NotFundsManagerOrOwner()")));
-        malformedPool.transferSlashedToFundsManager();
+        malformedPool.transferSlashedToFundsManager(false);
     }
 }

@@ -12,6 +12,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
     MockERC20 public mockUsdt;
     address public instructor = address(0x123);
     address public fundsManager = address(0x456);
+    address public backupFundsManager = address(0x1451);
     uint8 public usdtDecimals = 6;
     uint256 public flatDepositAmount = 70 * 10 ** usdtDecimals; // Assuming USDT has 6 decimals
     uint256 courseEndTime = block.timestamp + 30 days; // Course ends in 30 days
@@ -19,7 +20,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
     function setUp() public {
         mockUsdt = new MockERC20("Mock USDT", "USDT", usdtDecimals);
         pool = new SecurityDepositPoolHarness(
-            instructor, fundsManager, address(mockUsdt), flatDepositAmount, courseEndTime
+            instructor, fundsManager, backupFundsManager, address(mockUsdt), flatDepositAmount, courseEndTime
         );
     }
 
@@ -31,11 +32,13 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
     function testConstructorSucceeds() public {
         address instructor_ = address(0x111);
         address fundsManager_ = address(0x222);
+        address backupFundsManager_ = address(0x444);
         address usdt_ = address(0x333);
         uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
         uint256 courseFinalizedTime_ = block.timestamp + 10 days;
-        SecurityDepositPoolHarness pool_ =
-            new SecurityDepositPoolHarness(instructor_, fundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_);
+        SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
+            instructor_, fundsManager_, backupFundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_
+        );
         assertEq(pool_.owner(), instructor_);
         assertEq(pool_.fundsManager(), fundsManager_);
         assertEq(address(pool_.usdt()), usdt_);
@@ -45,49 +48,87 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
 
     function testConstructorFailsIfZeroFundsManager() public {
         address instructor_ = address(0x111);
+        address backupFundsManager_ = address(0x444);
         address usdt_ = address(0x333);
         uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
         uint256 courseFinalizedTime_ = block.timestamp + 10 days;
         vm.expectRevert(bytes4(keccak256("ZeroFundsManagerAddress()")));
-        new SecurityDepositPoolHarness(instructor_, address(0), usdt_, flatDepositAmount_, courseFinalizedTime_);
+        new SecurityDepositPoolHarness(
+            instructor_, address(0), backupFundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_
+        );
+    }
+
+    function testConstructorFailsIfZeroBackupFundsManager() public {
+        address instructor_ = address(0x111);
+        address fundsManager_ = address(0x222);
+        address usdt_ = address(0x333);
+        uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
+        uint256 courseFinalizedTime_ = block.timestamp + 10 days;
+        vm.expectRevert(bytes4(keccak256("ZeroBackupFundsManagerAddress()")));
+        new SecurityDepositPoolHarness(
+            instructor_, fundsManager_, address(0), usdt_, flatDepositAmount_, courseFinalizedTime_
+        );
     }
 
     function testConstructorFailsIfZeroUSDT() public {
         address instructor_ = address(0x111);
         address fundsManager_ = address(0x222);
+        address backupFundsManager_ = address(0x444);
         uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
         uint256 courseFinalizedTime_ = block.timestamp + 10 days;
         vm.expectRevert(bytes4(keccak256("ZeroUSDTAddress()")));
-        new SecurityDepositPoolHarness(instructor_, fundsManager_, address(0), flatDepositAmount_, courseFinalizedTime_);
+        new SecurityDepositPoolHarness(
+            instructor_, fundsManager_, backupFundsManager_, address(0), flatDepositAmount_, courseFinalizedTime_
+        );
     }
 
     function testConstructorFailsIfZeroFlatDepositAmount() public {
         address instructor_ = address(0x111);
         address fundsManager_ = address(0x222);
+        address backupFundsManager_ = address(0x444);
         address usdt_ = address(0x333);
         uint256 courseFinalizedTime_ = block.timestamp + 10 days;
         vm.expectRevert(bytes4(keccak256("ZeroFlatDepositAmount()")));
-        new SecurityDepositPoolHarness(instructor_, fundsManager_, usdt_, 0, courseFinalizedTime_);
+        new SecurityDepositPoolHarness(instructor_, fundsManager_, backupFundsManager_, usdt_, 0, courseFinalizedTime_);
     }
 
     function testConstructorFailsIfCourseFinalizedTimeInPast() public {
         address instructor_ = address(0x111);
         address fundsManager_ = address(0x222);
+        address backupFundsManager_ = address(0x444);
         address usdt_ = address(0x333);
         uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
         uint256 courseFinalizedTime_ = block.timestamp - 1;
         vm.expectRevert(bytes4(keccak256("CourseFinalizedTimeInPast()")));
-        new SecurityDepositPoolHarness(instructor_, fundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_);
+        new SecurityDepositPoolHarness(
+            instructor_, fundsManager_, backupFundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_
+        );
     }
 
     function testConstructorFailsIfCourseFinalizedTimeInDistantFuture() public {
         address instructor_ = address(0x111);
         address fundsManager_ = address(0x222);
+        address backupFundsManager_ = address(0x444);
         address usdt_ = address(0x333);
         uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
         uint256 courseFinalizedTime_ = block.timestamp + 61 days;
         vm.expectRevert(bytes4(keccak256("CourseFinalizedTimeInDistantFuture()")));
-        new SecurityDepositPoolHarness(instructor_, fundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_);
+        new SecurityDepositPoolHarness(
+            instructor_, fundsManager_, backupFundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_
+        );
+    }
+
+    function testConstructorFailsIfFundsManagersAddressesSame() public {
+        address instructor_ = address(0x111);
+        address fundsManager_ = address(0x222);
+        address backupFundsManager_ = fundsManager_; // Same as fundsManager
+        address usdt_ = address(0x333);
+        uint256 flatDepositAmount_ = 100 * 10 ** usdtDecimals;
+        uint256 courseFinalizedTime_ = block.timestamp + 10 days;
+        vm.expectRevert(bytes4(keccak256("DuplicateFundsManagerAddress()")));
+        new SecurityDepositPoolHarness(
+            instructor_, fundsManager_, backupFundsManager_, usdt_, flatDepositAmount_, courseFinalizedTime_
+        );
     }
 
     /**
@@ -179,7 +220,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Setup pool with MockMalformedERC20
         MockMalformedERC20 malformedUsdt = new MockMalformedERC20("Malformed USDT", "USDT", usdtDecimals);
         SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
-            instructor, fundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
+            instructor, fundsManager, backupFundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
         );
         address student = address(0x789);
         malformedUsdt.mint(student, flatDepositAmount);
@@ -340,7 +381,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Setup pool with MockMalformedERC20
         MockMalformedERC20 malformedUsdt = new MockMalformedERC20("Malformed USDT", "USDT", usdtDecimals);
         SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
-            instructor, fundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
+            instructor, fundsManager, backupFundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
         );
         address student = address(0x789);
         malformedUsdt.mint(student, flatDepositAmount);
@@ -721,10 +762,78 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Transfer slashed funds
         uint256 slashedAmount = flatDepositAmount / 2;
         uint256 fundsManagerBalanceBefore = mockUsdt.balanceOf(fundsManager);
+        uint256 backupFundsManagerBalanceBefore = mockUsdt.balanceOf(backupFundsManager);
+        assertEq(fundsManagerBalanceBefore, 0);
+        assertEq(backupFundsManagerBalanceBefore, 0);
         vm.prank(fundsManager);
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
         // Funds manager should receive slashed amount
-        assertEq(mockUsdt.balanceOf(fundsManager), fundsManagerBalanceBefore + slashedAmount);
+        assertEq(mockUsdt.balanceOf(fundsManager), slashedAmount);
+        assertEq(mockUsdt.balanceOf(backupFundsManager), 0);
+        // totalSlashed should be zero
+        assertEq(pool.totalSlashed(), 0);
+        // isTotalSlashedTransferred should be true
+        assertTrue(pool.isTotalSlashedTransferred());
+    }
+
+    function testTransferSlashedToBackupFundsManagerSucceeds() public {
+        address student = address(0x789);
+        mockUsdt.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdt.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+        // Slash deposit
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = flatDepositAmount / 2;
+        vm.prank(instructor);
+        pool.slashMany(students, amounts);
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+        // Transfer slashed funds
+        uint256 slashedAmount = flatDepositAmount / 2;
+        uint256 backupFundsManagerBalanceBefore = mockUsdt.balanceOf(backupFundsManager);
+        assertEq(backupFundsManagerBalanceBefore, 0);
+        vm.prank(fundsManager);
+        // Transfer to backup funds manager
+        pool.transferSlashedToFundsManager(true);
+        // Only backup funds manager should receive slashed amount
+        assertEq(mockUsdt.balanceOf(fundsManager), 0);
+        assertEq(mockUsdt.balanceOf(backupFundsManager), slashedAmount);
+        // totalSlashed should be zero
+        assertEq(pool.totalSlashed(), 0);
+        // isTotalSlashedTransferred should be true
+        assertTrue(pool.isTotalSlashedTransferred());
+    }
+
+    function testTransferSlashedToBackupFundsManagerFromOwnerSucceeds() public {
+        address student = address(0x789);
+        mockUsdt.mint(student, flatDepositAmount);
+        vm.prank(student);
+        mockUsdt.approve(address(pool), flatDepositAmount);
+        vm.prank(student);
+        pool.deposit();
+        // Slash deposit
+        address[] memory students = new address[](1);
+        students[0] = student;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = flatDepositAmount / 2;
+        vm.prank(instructor);
+        pool.slashMany(students, amounts);
+        // Warp time past course end
+        vm.warp(block.timestamp + 31 days);
+        // Transfer slashed funds
+        uint256 slashedAmount = flatDepositAmount / 2;
+        uint256 backupFundsManagerBalanceBefore = mockUsdt.balanceOf(backupFundsManager);
+        assertEq(backupFundsManagerBalanceBefore, 0);
+        vm.prank(instructor);
+        // Transfer to backup funds manager
+        pool.transferSlashedToFundsManager(true);
+        // Only backup funds manager should receive slashed amount
+        assertEq(mockUsdt.balanceOf(fundsManager), 0);
+        assertEq(mockUsdt.balanceOf(backupFundsManager), slashedAmount);
         // totalSlashed should be zero
         assertEq(pool.totalSlashed(), 0);
         // isTotalSlashedTransferred should be true
@@ -748,7 +857,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         address notAllowed = address(0x999);
         vm.prank(notAllowed);
         vm.expectRevert(abi.encodeWithSignature("NotFundsManagerOrOwner()"));
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
     }
 
     function testTransferSlashedToFundsManagerFailsIfCourseNotFinalized() public {
@@ -767,7 +876,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Do NOT warp time
         vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("CourseNotFinalized()")));
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
     }
 
     function testTransferSlashedToFundsManagerFailsIfNoSlashedAmount() public {
@@ -775,7 +884,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         vm.warp(block.timestamp + 31 days);
         vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("NoSlashedAmountToTransfer()")));
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
     }
 
     function testTransferSlashedToFundsManagerFailsIfAlreadyTransferred() public {
@@ -793,18 +902,18 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         pool.slashMany(students, amounts);
         vm.warp(block.timestamp + 31 days);
         vm.prank(fundsManager);
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
         // Try again
         vm.prank(fundsManager);
         vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
-        pool.transferSlashedToFundsManager();
+        pool.transferSlashedToFundsManager(false);
     }
 
     function testTransferSlashedToFundsManagerFailsIfTransferFails() public {
         // Setup pool with MockMalformedERC20
         MockMalformedERC20 malformedUsdt = new MockMalformedERC20("Malformed USDT", "USDT", usdtDecimals);
         SecurityDepositPoolHarness pool_ = new SecurityDepositPoolHarness(
-            instructor, fundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
+            instructor, fundsManager, backupFundsManager, address(malformedUsdt), flatDepositAmount, courseEndTime
         );
         address student = address(0x789);
         malformedUsdt.mint(student, flatDepositAmount);
@@ -828,7 +937,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         // Try to transfer slashed funds to fundsManager, should revert
         vm.prank(fundsManager);
         vm.expectRevert();
-        pool_.transferSlashedToFundsManager();
+        pool_.transferSlashedToFundsManager(false);
     }
 
     /**
