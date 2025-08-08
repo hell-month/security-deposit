@@ -19,5 +19,5 @@ If you find any critical vulnerabilities involving theft or loss of funds, pleas
 
 ### Base Sepolia Testnet
 
-- MockUSDT: https://sepolia.basescan.org/address/0x648f3a5b420F3341Ce0F0A6482D6362B37001189
-- SecurityDepositPool: https://sepolia.basescan.org/address/0xb2571AC9863FaBe45C756bE30Bc89Ebd90082fF1
+- MockUSDT: https://sepolia.basescan.org/address/0x06E8848DF4ceDBF9b1d401bd4aBC4dBCa836a070
+- SecurityDepositPool: https://sepolia.basescan.org/address/0xecb5692f392C013b6513f441cceD19Fb8224f002
