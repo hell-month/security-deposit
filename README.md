@@ -24,4 +24,4 @@ If you find any critical vulnerabilities involving theft or loss of funds, pleas
 
 ### Ethereum Mainnet
 
-- SecurityDepositPool: https://etherscan.io/address/
+- SecurityDepositPool: https://etherscan.io/address/0x94ae95e096fe4c5954840760e0190c27a2ebbdde
