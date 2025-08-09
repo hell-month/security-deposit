@@ -403,4 +403,153 @@ contract IntegrationTest is Test, ISecurityDepositPool {
         vm.expectRevert(bytes4(keccak256("NotFundsManagerOrOwner()")));
         malformedPool.transferSlashedToFundsManager(false);
     }
+
+    function testMixedDepositSlashAndWithdrawTransferInterleaved() public {
+        uint256 A = flatDepositAmount;
+
+        // Initial mixed deposits: students 0..3
+        for (uint256 i = 0; i <= 3; i++) {
+            mockUsdt.mint(students[i], A);
+            vm.prank(students[i]);
+            mockUsdt.approve(address(pool), A);
+            vm.prank(students[i]);
+            pool.deposit();
+        }
+
+        // First slashing round: immediately slash some of them
+        {
+            address[] memory slashStudents1 = new address[](2);
+            uint256[] memory slashAmounts1 = new uint256[](2);
+            slashStudents1[0] = students[0];
+            slashAmounts1[0] = (A * 20) / 100; // 20%
+            slashStudents1[1] = students[1];
+            slashAmounts1[1] = (A * 50) / 100; // 50%
+            vm.prank(instructor);
+            pool.slashMany(slashStudents1, slashAmounts1);
+
+            assertEq(pool.totalSlashed(), ((A * 20) / 100) + ((A * 50) / 100));
+            assertEq(pool.deposits(students[0]), A - (A * 20) / 100);
+            assertEq(pool.deposits(students[1]), A - (A * 50) / 100);
+            assertEq(pool.deposits(students[2]), A);
+            assertEq(pool.deposits(students[3]), A);
+        }
+
+        // More deposits: students 4..7
+        for (uint256 i = 4; i <= 7; i++) {
+            mockUsdt.mint(students[i], A);
+            vm.prank(students[i]);
+            mockUsdt.approve(address(pool), A);
+            vm.prank(students[i]);
+            pool.deposit();
+        }
+
+        // Second slashing round, mixing with newly deposited students
+        uint256 totalSlashed;
+        {
+            address[] memory slashStudents2 = new address[](3);
+            uint256[] memory slashAmounts2 = new uint256[](3);
+            slashStudents2[0] = students[2];
+            slashAmounts2[0] = A; // 100%
+            slashStudents2[1] = students[4];
+            slashAmounts2[1] = (A * 30) / 100; // 30%
+            slashStudents2[2] = students[6];
+            slashAmounts2[2] = (A * 70) / 100; // 70%
+            vm.prank(instructor);
+            pool.slashMany(slashStudents2, slashAmounts2);
+
+            totalSlashed = ((A * 20) / 100) + ((A * 50) / 100) + A + ((A * 30) / 100) + ((A * 70) / 100);
+            assertEq(pool.totalSlashed(), totalSlashed); // 2.7A
+            assertEq(pool.deposits(students[2]), 0);
+            assertEq(pool.deposits(students[4]), A - (A * 30) / 100);
+            assertEq(pool.deposits(students[6]), A - (A * 70) / 100);
+        }
+
+        // Final deposits: students 8..9
+        for (uint256 i = 8; i <= 9; i++) {
+            mockUsdt.mint(students[i], A);
+            vm.prank(students[i]);
+            mockUsdt.approve(address(pool), A);
+            vm.prank(students[i]);
+            pool.deposit();
+        }
+
+        // Pool should now hold 10 deposits
+        assertEq(mockUsdt.balanceOf(address(pool)), A * 10);
+
+        // Finalize course
+        vm.warp(courseEndTime + 1 days);
+
+        // Mixed post-finalization: individual withdrawals first (students 3,5)
+        for (uint256 i = 0; i < 2; i++) {
+            uint256 s = (i == 0) ? 3 : 5;
+            uint256 poolBefore = mockUsdt.balanceOf(address(pool));
+            uint256 balBefore = mockUsdt.balanceOf(students[s]);
+            vm.prank(students[s]);
+            pool.withdraw();
+            assertEq(mockUsdt.balanceOf(students[s]), balBefore + A);
+            assertEq(mockUsdt.balanceOf(address(pool)), poolBefore - A);
+        }
+
+        // Transfer slashed funds in the middle
+        {
+            uint256 fundsBefore = mockUsdt.balanceOf(fundsManager);
+            uint256 poolBeforeTransfer = mockUsdt.balanceOf(address(pool));
+            vm.prank(fundsManager);
+            pool.transferSlashedToFundsManager(false);
+            assertEq(mockUsdt.balanceOf(fundsManager), fundsBefore + totalSlashed);
+            assertEq(pool.totalSlashed(), 0);
+            assertTrue(pool.isTotalSlashedTransferred());
+            assertEq(mockUsdt.balanceOf(address(pool)), poolBeforeTransfer - totalSlashed);
+        }
+
+        // Batch withdrawal for a subset (students 0,1,4)
+        {
+            address[] memory batch1 = new address[](3);
+            batch1[0] = students[0]; // 80% remaining
+            batch1[1] = students[1]; // 50% remaining
+            batch1[2] = students[4]; // 70% remaining
+            uint256 expectedBatch1 = (A - (A * 20) / 100) + (A - (A * 50) / 100) + (A - (A * 30) / 100);
+            uint256 poolBeforeBatch1 = mockUsdt.balanceOf(address(pool));
+            vm.prank(instructor);
+            pool.withdrawMany(batch1);
+            assertEq(mockUsdt.balanceOf(address(pool)), poolBeforeBatch1 - expectedBatch1);
+        }
+
+        // Double transfer should revert now
+        vm.prank(fundsManager);
+        vm.expectRevert(bytes4(keccak256("SlashedAmountAlreadyTransferred()")));
+        pool.transferSlashedToFundsManager(false);
+
+        // Withdraw student 6 individually (30% remaining)
+        uint256 poolBeforeS6 = mockUsdt.balanceOf(address(pool));
+        uint256 balBeforeS6 = mockUsdt.balanceOf(students[6]);
+        vm.prank(students[6]);
+        pool.withdraw();
+        assertEq(mockUsdt.balanceOf(students[6]), balBeforeS6 + (A - (A * 70) / 100));
+        assertEq(mockUsdt.balanceOf(address(pool)), poolBeforeS6 - (A - (A * 70) / 100));
+
+        // Final batch withdrawal for remaining full students (7,8,9)
+        {
+            address[] memory batch2 = new address[](3);
+            batch2[0] = students[7];
+            batch2[1] = students[8];
+            batch2[2] = students[9];
+            uint256 poolBeforeBatch2 = mockUsdt.balanceOf(address(pool));
+            vm.prank(instructor);
+            pool.withdrawMany(batch2);
+            assertEq(mockUsdt.balanceOf(address(pool)), poolBeforeBatch2 - (3 * A));
+        }
+
+        // Reverts: fully slashed student 2 and double-withdraw student 0
+        vm.prank(students[2]);
+        vm.expectRevert(bytes4(keccak256("NoRemainingDeposit()")));
+        pool.withdraw();
+
+        vm.prank(students[0]);
+        vm.expectRevert(bytes4(keccak256("NoRemainingDeposit()")));
+        pool.withdraw();
+
+        // Final checks: pool empty and conservation holds
+        _verifyFinalState();
+    }
 }
