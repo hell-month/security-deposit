@@ -41,6 +41,7 @@ contract SecurityDepositPoolTest is Test, ISecurityDepositPool {
         );
         assertEq(pool_.owner(), instructor_);
         assertEq(pool_.fundsManager(), fundsManager_);
+        assertEq(pool_.backupFundsManager(), backupFundsManager_);
         assertEq(address(pool_.usdt()), usdt_);
         assertEq(pool_.flatDepositAmount(), flatDepositAmount_);
         assertEq(pool_.courseFinalizedTime(), courseFinalizedTime_);
